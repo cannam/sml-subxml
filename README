@@ -11,11 +11,11 @@ DOM tree containing element, text, and attribute data types only.
 This is a very long way from being a conforming parser, and it should
 only be used to support near-trivial legacy documents whose known
 formats are not expected to change. The character encoding is assumed
-to be UTF8 or an 8-bit encoding; wide character encodings are not
-supported. Comments and processing instructions are removed.
-Namespaces are not expanded. Other sections such as CDATA and entity
-definitions are passed through verbatim. Nothing is unescaped. There
-is no DOM navigation API. Testing is very minimal.
+to be UTF8 or an 8-bit ASCII-compatible encoding; wide character
+encodings are not supported. Comments and processing instructions are
+ignored. CDATA sections are supported, DOCTYPE declarations are
+ignored, and other declarations are rejected. There is no DOM
+navigation API. Testing is very minimal.
 
 Note that although the parser is limited, it is not forgiving --
 anything it can't understand is rejected with a clear error

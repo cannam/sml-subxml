@@ -18,9 +18,9 @@ fun contents filename =
 fun processFile filename =
     let val input = contents filename
     in
-        case Xml.parse input of
-            Xml.ERROR e => TextIO.output (TextIO.stdErr, "Error: " ^ e ^ "\n")
-          | Xml.OK xml => print (Xml.serialise xml ^ "\n")
+        case SubXml.parse input of
+            SubXml.ERROR e => TextIO.output (TextIO.stdErr, "Error: " ^ e ^ "\n")
+          | SubXml.OK xml => print (SubXml.serialise xml ^ "\n")
     end
 
 fun usage () =

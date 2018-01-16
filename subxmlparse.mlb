@@ -1,4 +1,4 @@
 $(SML_LIB)/basis/basis.mlb
-xml.sml
-xmlparse.sml
+subxml.sml
+subxmlparse.sml
 main.sml
