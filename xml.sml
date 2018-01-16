@@ -55,6 +55,7 @@ signature XML = sig
 
     datatype node = ELEMENT of { name : string, children : node list }
                   | TEXT of string
+                  | CDATA of string
                   | ATTRIBUTE of string * string
 
     datatype document = DOCUMENT of { name : string, children : node list }
@@ -71,6 +72,7 @@ structure Xml = struct
 
     datatype node = ELEMENT of { name : string, children : node list }
                   | TEXT of string
+                  | CDATA of string
                   | ATTRIBUTE of string * string
 
     datatype document = DOCUMENT of { name : string, children : node list }
@@ -86,6 +88,7 @@ structure Xml = struct
                        | EQUAL
                        | NAME of string
                        | TEXT of string
+                       | CDATA of string
 
         fun toString t =
             case t of ANGLE_L => "<"
@@ -95,6 +98,7 @@ structure Xml = struct
                     | EQUAL => "="
                     | NAME s => s
                     | TEXT s => "\"" ^ s ^ "\""
+                    | CDATA s => "CDATA section"
     end
 
     fun error pos text = ERROR (text ^ " at character position " ^
@@ -145,13 +149,32 @@ structure Xml = struct
       | lexPI pos acc [] =
         error pos "Document ends during processing instruction"
 
-    and lexDeclaration pos acc (#">" :: xs) = lexOut (pos+1) acc xs
-      | lexDeclaration pos acc (x :: xs) = lexDeclaration (pos+1) acc xs
-      | lexDeclaration pos acc [] =
-        error pos "Document ends during declaration"
+    and lexCData pos acc cc =
+        let fun lexCData' pos text [] =
+                error pos "Document ends during CDATA section"
+              | lexCData' pos text (#"]" :: #"]" :: #">" :: xs) =
+                OK (rev text, xs, pos)
+              | lexCData' pos text (x::xs) =
+                lexCData' (pos+1) (x::text) xs
+        in
+            case lexCData' pos [] cc of
+                OK (text, rest, newpos) =>
+                lexOut newpos (T.CDATA (implode text) :: acc) rest
+              | ERROR e => ERROR e
+        end
+              
+    and lexDoctype pos acc (#">" :: xs) = lexOut (pos+1) acc xs
+      | lexDoctype pos acc (x :: xs) = lexDoctype (pos+1) acc xs
+      | lexDoctype pos acc [] = error pos "Document ends during DOCTYPE"
+
+    and lexDeclaration pos acc (#"-" :: #"-" :: xs) = lexComment (pos+2) acc xs
+      | lexDeclaration pos acc (#"[" :: #"C" :: #"D" :: #"A" :: #"T" :: #"A" ::
+                                #"[" :: xs) = lexCData (pos+7) acc xs
+      | lexDeclaration pos acc (#"D" :: #"O" :: #"C" :: #"T" :: #"Y" :: #"P" ::
+                                #"E" :: xs) = lexDoctype (pos+7) acc xs
+      | lexDeclaration pos acc xs = error pos "Unsupported declaration type"
             
     and lexOpen pos acc (#"/" :: xs) = lexIn (pos+1) (T.ANGLE_SLASH_L :: acc) xs
-      | lexOpen pos acc (#"!" :: #"-" :: #"-" :: xs) = lexComment (pos+3) acc xs
       | lexOpen pos acc (#"!" :: xs) = lexDeclaration (pos+1) acc xs
       | lexOpen pos acc (#"?" :: xs) = lexPI (pos+1) acc xs
       | lexOpen pos acc xs = lexIn pos (T.ANGLE_L :: acc) xs
@@ -216,6 +239,11 @@ structure Xml = struct
             name = #name elt,
             children = TEXT text :: #children elt
         } xs
+      | parseContent elt (T.CDATA text :: xs) =
+        parseContent {
+            name = #name elt,
+            children = CDATA text :: #children elt
+        } xs
       | parseContent elt (T.ANGLE_L :: xs) =
         (case parseElement xs of
              ERROR e => ERROR e
@@ -223,14 +251,18 @@ structure Xml = struct
                                   name = #name elt,
                                   children = ELEMENT child :: #children elt
                               } xs)
-      | parseContent elt toks =
-        parseError toks "Unexpected token"
+      | parseContent elt (x :: xs) =
+        parseError xs ("Unexpected token " ^ T.toString x)
+      | parseContent elt [] =
+        parseError [] ("Document ends within element \"" ^ #name elt ^ "\"")
                                      
     and parseNamedElement elt (T.SLASH_ANGLE_R :: xs) = OK (elt, xs)
       | parseNamedElement elt (T.NAME name :: xs) = parseAttribute elt name xs
       | parseNamedElement elt (T.ANGLE_R :: xs) = parseContent elt xs
-      | parseNamedElement elt toks =
-        parseError toks "Unexpected token"
+      | parseNamedElement elt (x :: xs) =
+        parseError xs ("Unexpected token " ^ T.toString x)
+      | parseNamedElement elt [] =
+        parseError [] "Document ends within tag"
                           
     and parseElement [] = ERROR "Empty element"
       | parseElement (T.NAME name :: xs) =
@@ -276,6 +308,8 @@ structure Xml = struct
         name ^ "=" ^ "\"" ^ value ^ "\"" (*!!!*)
       | serialiseNode (TEXT string) =
         string
+      | serialiseNode (CDATA string) =
+        "<![CDATA[" ^ string ^ "]]>"
       | serialiseNode (ELEMENT { name, children = [] }) =
         "<" ^ name ^ "/>"
       | serialiseNode (ELEMENT { name, children }) =
