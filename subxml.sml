@@ -51,12 +51,12 @@
    Software without prior written authorization.
 *)
 
-signature SUB_XML = sig
+signature SUBXML = sig
 
     datatype node = ELEMENT of { name : string, children : node list }
+                  | ATTRIBUTE of string * string
                   | TEXT of string
                   | CDATA of string
-                  | ATTRIBUTE of string * string
 
     datatype document = DOCUMENT of { name : string, children : node list }
 
@@ -68,12 +68,12 @@ signature SUB_XML = sig
                                    
 end
 
-structure SubXml :> SUB_XML = struct
+structure SubXml :> SUBXML = struct
 
     datatype node = ELEMENT of { name : string, children : node list }
+                  | ATTRIBUTE of string * string
                   | TEXT of string
                   | CDATA of string
-                  | ATTRIBUTE of string * string
 
     datatype document = DOCUMENT of { name : string, children : node list }
 
@@ -142,24 +142,26 @@ structure SubXml :> SUB_XML = struct
                   | ERROR e => ERROR e
             end
 
-        and comment pos acc (#"-" :: #"-" :: #">" :: xs) = outside (pos+3) acc xs
-          | comment pos acc (#">" :: _) = tokenError pos #">"
-          | comment pos acc (x :: xs) = comment (pos+1) acc xs
-          | comment pos acc [] = error pos "Document ends during comment"
+        and comment pos acc cc =
+            case cc of
+                #"-" :: #"-" :: #">" :: xs => outside (pos+3) acc xs
+              | #">" :: _ => tokenError pos #">"
+              | x :: xs => comment (pos+1) acc xs
+              | [] => error pos "Document ends during comment"
 
-        and instruction pos acc (#"?" :: #">" :: xs) = outside (pos+2) acc xs
-          | instruction pos acc (#">" :: _) = tokenError pos #">"
-          | instruction pos acc (x :: xs) = instruction (pos+1) acc xs
-          | instruction pos acc [] =
-            error pos "Document ends during processing instruction"
+        and instruction pos acc cc =
+            case cc of
+                #"?" :: #">" :: xs => outside (pos+2) acc xs
+              | #">" :: _ => tokenError pos #">"
+              | x :: xs => instruction (pos+1) acc xs
+              | [] => error pos "Document ends during processing instruction"
 
         and cdata pos acc cc =
-            let fun cdata' pos text [] =
-                    error pos "Document ends during CDATA section"
-                  | cdata' pos text (#"]" :: #"]" :: #">" :: xs) =
-                    OK (rev text, xs, pos)
-                  | cdata' pos text (x::xs) =
-                    cdata' (pos+1) (x::text) xs
+            let fun cdata' pos text cc =
+                    case cc of
+                        #"]" :: #"]" :: #">" :: xs => OK (rev text, xs, pos)
+                      | x :: xs => cdata' (pos+1) (x::text) xs
+                      | [] => error pos "Document ends during CDATA section"
             in
                 case cdata' pos [] cc of
                     OK (text, rest, pos) =>
@@ -167,25 +169,34 @@ structure SubXml :> SUB_XML = struct
                   | ERROR e => ERROR e
             end
                 
-        and doctype pos acc (#">" :: xs) = outside (pos+1) acc xs
-          | doctype pos acc (x :: xs) = doctype (pos+1) acc xs
-          | doctype pos acc [] = error pos "Document ends during DOCTYPE"
+        and doctype pos acc cc =
+            case cc of
+                #">" :: xs => outside (pos+1) acc xs
+              | x :: xs => doctype (pos+1) acc xs
+              | [] => error pos "Document ends during DOCTYPE"
 
-        and declaration pos acc (#"-" :: #"-" :: xs) = comment (pos+2) acc xs
-          | declaration pos acc (#"[" :: #"C" :: #"D" :: #"A" :: #"T" :: #"A" ::
-                                    #"[" :: xs) = cdata (pos+7) acc xs
-          | declaration pos acc (#"D" :: #"O" :: #"C" :: #"T" :: #"Y" :: #"P" ::
-                                    #"E" :: xs) = doctype (pos+7) acc xs
-          | declaration pos acc xs = error pos "Unsupported declaration type"
+        and declaration pos acc cc =
+            case cc of
+                #"-" :: #"-" :: xs => comment (pos+2) acc xs
+              | #"[" :: #"C" :: #"D" :: #"A" :: #"T" :: #"A" ::
+                #"[" :: xs => cdata (pos+7) acc xs
+              | #"D" :: #"O" :: #"C" :: #"T" :: #"Y" :: #"P" ::
+                #"E" :: xs => doctype (pos+7) acc xs
+              | [] => error pos "Document ends during declaration"
+              | _ => error pos "Unsupported declaration type"
 
-        and left pos acc (#"/" :: xs) = inside (pos+1) (T.ANGLE_SLASH_L :: acc) xs
-          | left pos acc (#"!" :: xs) = declaration (pos+1) acc xs
-          | left pos acc (#"?" :: xs) = instruction (pos+1) acc xs
-          | left pos acc xs = inside pos (T.ANGLE_L :: acc) xs
+        and left pos acc cc =
+            case cc of
+                #"/" :: xs => inside (pos+1) (T.ANGLE_SLASH_L :: acc) xs
+              | #"!" :: xs => declaration (pos+1) acc xs
+              | #"?" :: xs => instruction (pos+1) acc xs
+              | xs => inside pos (T.ANGLE_L :: acc) xs
 
-        and slash pos acc (#">"::xs) = outside (pos+1) (T.SLASH_ANGLE_R :: acc) xs
-          | slash pos _ (x::_) = tokenError pos x
-          | slash pos _ [] = error pos "Document ends before element closed"
+        and slash pos acc cc =
+            case cc of
+                #">" :: xs => outside (pos+1) (T.SLASH_ANGLE_R :: acc) xs
+              | x :: _ => tokenError pos x
+              | [] => error pos "Document ends before element closed"
 
         and close pos acc xs = outside pos (T.ANGLE_R :: acc) xs
 
@@ -196,24 +207,25 @@ structure SubXml :> SUB_XML = struct
             let fun textOf text = T.TEXT (implode (rev text))
                 fun outside' pos [] acc [] = OK acc
                   | outside' pos text acc [] = OK (textOf text :: acc)
-                  | outside' pos [] acc (#"<"::xs) =
-                    left (pos+1) acc xs
-                  | outside' pos text acc (#"<"::xs) =
-                    left (pos+1) (textOf text :: acc) xs
                   | outside' pos text acc (x::xs) =
-                    outside' (pos+1) (x::text) acc xs
+                    case x of
+                        #"<" => if text = []
+                                then left (pos+1) acc xs
+                                else left (pos+1) (textOf text :: acc) xs
+                      | x => outside' (pos+1) (x::text) acc xs
             in
                 outside' pos [] acc cc
             end
                 
-        and inside pos acc [] = error pos "Document ends inside element"
+        and inside pos acc [] = error pos "Document ends within tag"
           | inside pos acc (#"<"::_) = tokenError pos #"<"
           | inside pos acc (x::xs) =
             (case x of
-                 #" " => inside | #"\t" => inside | #"\n" => inside | #"\r" => inside
-                 | #"\"" => quoted x | #"'" => quoted x
-                 | #"/" => slash | #">" => close | #"=" => equal
-                 | x => name x) (pos+1) acc xs
+                 #" " => inside | #"\t" => inside
+               | #"\n" => inside | #"\r" => inside
+               | #"\"" => quoted x | #"'" => quoted x
+               | #"/" => slash | #">" => close | #"=" => equal
+               | x => name x) (pos+1) acc xs
 
         fun lex str =
             case outside 1 [] (explode str) of
@@ -228,58 +240,64 @@ structure SubXml :> SUB_XML = struct
         fun show [] = "end of input"
           | show (tok :: _) = T.toString tok
 
-        fun error toks text = ERROR (text ^ " before " ^ show toks)
+        fun error toks text = ERROR (text ^ ", found before " ^ show toks)
 
-        fun attribute elt name (T.EQUAL :: T.TEXT value :: xs) =
-            namedElement {
-                name = #name elt,
-                children = ATTRIBUTE (name, value) :: #children elt
-            } xs
-          | attribute elt name toks =
-            error toks "Expected attribute value"
+        fun attribute elt name toks =
+            case toks of
+                T.EQUAL :: T.TEXT value :: xs =>
+                namedElement {
+                    name = #name elt,
+                    children = ATTRIBUTE (name, value) :: #children elt
+                } xs
+              | toks => error toks "Expected attribute value"
 
-        and content elt (T.ANGLE_SLASH_L :: T.NAME n :: T.ANGLE_R :: xs) =
-            if n = #name elt
-            then OK (elt, xs)
-            else error xs ("Element closing tag </" ^ n ^
-                                "> does not match opening <" ^ #name elt ^ ">")
-          | content elt (T.TEXT text :: xs) =
-            content {
-                name = #name elt,
-                children = TEXT text :: #children elt
-            } xs
-          | content elt (T.CDATA text :: xs) =
-            content {
-                name = #name elt,
-                children = CDATA text :: #children elt
-            } xs
-          | content elt (T.ANGLE_L :: xs) =
-            (case element xs of
-                 ERROR e => ERROR e
-               | OK (child, xs) => content {
-                                      name = #name elt,
-                                      children = ELEMENT child :: #children elt
-                                  } xs)
-          | content elt (x :: xs) =
-            error xs ("Unexpected token " ^ T.toString x)
-          | content elt [] =
-            error [] ("Document ends within element \"" ^ #name elt ^ "\"")
+        and content elt toks =
+            case toks of
+                T.ANGLE_SLASH_L :: T.NAME n :: T.ANGLE_R :: xs =>
+                if n = #name elt
+                then OK (elt, xs)
+                else error xs ("Element closing tag </" ^ n ^ "> " ^
+                               "does not match opening <" ^ #name elt ^ ">")
+              | T.TEXT text :: xs =>
+                content {
+                    name = #name elt,
+                    children = TEXT text :: #children elt
+                } xs
+              | T.CDATA text :: xs =>
+                content {
+                    name = #name elt,
+                    children = CDATA text :: #children elt
+                } xs
+              | T.ANGLE_L :: xs =>
+                (case element xs of
+                     ERROR e => ERROR e
+                   | OK (child, xs) =>
+                     content {
+                         name = #name elt,
+                         children = ELEMENT child :: #children elt
+                     } xs)
+              | x :: xs =>
+                error xs ("Unexpected token " ^ T.toString x)
+              | [] =>
+                error [] ("Document ends within element \"" ^ #name elt ^ "\"")
                        
-        and namedElement elt (T.SLASH_ANGLE_R :: xs) = OK (elt, xs)
-          | namedElement elt (T.NAME name :: xs) = attribute elt name xs
-          | namedElement elt (T.ANGLE_R :: xs) = content elt xs
-          | namedElement elt (x :: xs) =
-            error xs ("Unexpected token " ^ T.toString x)
-          | namedElement elt [] =
-            error [] "Document ends within tag"
+        and namedElement elt toks =
+            case toks of
+                T.SLASH_ANGLE_R :: xs => OK (elt, xs)
+              | T.NAME name :: xs => attribute elt name xs
+              | T.ANGLE_R :: xs => content elt xs
+              | x :: xs => error xs ("Unexpected token " ^ T.toString x)
+              | [] => error [] "Document ends within tag"
                        
-        and element [] = ERROR "Empty element"
-          | element (T.NAME name :: xs) =
-            (case namedElement { name = name, children = [] } xs of
-                 ERROR e => ERROR e 
-               | OK ({ name, children }, xs) =>
-                 OK ({ name = name, children = rev children }, xs))
-          | element toks = error toks "Expected element name"
+        and element toks =
+            case toks of
+                [] => ERROR "Empty element"
+              | T.NAME name :: xs =>
+                (case namedElement { name = name, children = [] } xs of
+                     ERROR e => ERROR e 
+                   | OK ({ name, children }, xs) =>
+                     OK ({ name = name, children = rev children }, xs))
+              | toks => error toks "Expected element name"
 
         and document [] = ERROR "Empty document"
           | document (tok :: xs) =
@@ -318,19 +336,17 @@ structure SubXml :> SUB_XML = struct
                                (fn ATTRIBUTE _ => false | _ => true)
                                nodes))
                 
-        and node (ATTRIBUTE (name, value)) =
-            name ^ "=" ^ "\"" ^ value ^ "\"" (*!!!*)
-          | node (TEXT string) =
-            string
-          | node (CDATA string) =
-            "<![CDATA[" ^ string ^ "]]>"
-          | node (ELEMENT { name, children = [] }) =
-            "<" ^ name ^ "/>"
-          | node (ELEMENT { name, children }) =
-            "<" ^ name ^
-            attributes children ^ ">" ^
-            nonAttributes children ^
-            "</" ^ name ^ ">"
+        and node n =
+            case n of
+                ATTRIBUTE (name, value) =>
+                name ^ "=" ^ "\"" ^ value ^ "\"" (*!!!*)
+              | TEXT string => string
+              | CDATA string => "<![CDATA[" ^ string ^ "]]>"
+              | ELEMENT { name, children = [] } => "<" ^ name ^ "/>"
+              | ELEMENT { name, children } => "<" ^ name ^
+                                              attributes children ^ ">" ^
+                                              nonAttributes children ^
+                                              "</" ^ name ^ ">"
                               
         fun serialise (DOCUMENT { name, children }) =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" ^
