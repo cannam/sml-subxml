@@ -19,7 +19,7 @@
    * Processing instructions (<? ... ?>) are ignored
 
    * DOCTYPE declarations are ignored; all other declarations (<!
-     ... >) are rejected
+     ... >) are rejected except for CDATA, which is handled properly
 
    * Character and entity references (&-escapes) have no special
      status and are just passed through literally
