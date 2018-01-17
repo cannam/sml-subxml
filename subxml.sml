@@ -1,27 +1,35 @@
 
-(* Simplistic Standard ML XML "parser"
-   ===================================
+(* SubXml - A parser for a subset of XML
+   =====================================
 
    https://bitbucket.org/cannam/sml-simplexml
 
-   This simplistic XML "parser", intended for handling configuration
-   files and small data files in simple formats, produces an in-memory
-   DOM tree containing element, text, and attribute data types only.
-   
-   This is a very long way from being a conforming parser, and it should
-   only be used to support near-trivial legacy documents whose known
-   formats are not expected to change. The character encoding is assumed
-   to be UTF8 or an 8-bit encoding; wide character encodings are not
-   supported. Comments and processing instructions are removed.
-   Namespaces are not expanded. Other sections such as CDATA and entity
-   definitions are passed through verbatim. Nothing is unescaped. There
-   is no DOM navigation API. Testing is very minimal.
-   
+   SubXml is a parser and serialiser for a format resembling XML. It
+   can be used as a minimal parser for small XML configuration or
+   interchange files, so long as they make suitably limited use of XML
+   and so long as that is not expected to change.
+
+   The format supported by SubXml consists of the element, attribute,
+   text, CDATA, and comment syntax from XML. It differs from XML in
+   the following ways:
+
+   * The document is assumed to be in an 8-bit "ASCII-compatible"
+     format such as UTF-8; UTF-16 is not supported
+
+   * Processing instructions (<? ... ?>) are ignored
+
+   * DOCTYPE declarations are ignored; all other declarations (<!
+     ... >) are rejected
+
+   * Character and entity references (&-escapes) have no special
+     status and are just passed through literally
+
    Note that although the parser is limited, it is not forgiving --
    anything it can't understand is rejected with a clear error
-   message. But because of its super-limited design, it will both accept
-   many documents that are not well-formed XML, and reject many that are.
-   
+   message. But because of its super-limited design, it will both
+   accept many documents that are not well-formed XML, and reject many
+   that are.
+
    An equally simplistic serialiser is also provided.
    
    Copyright 2018 Chris Cannam.
@@ -121,8 +129,8 @@ structure SubXml :> SUBXML = struct
                     error pos "Document ends during quoted string"
                   | quoted' pos text (x::xs) =
                     if x = quote
-                    then OK (rev text, xs, pos + 1)
-                    else quoted' (pos + 1) (x::text) xs
+                    then OK (rev text, xs, pos+1)
+                    else quoted' (pos+1) (x::text) xs
             in
                 case quoted' pos [] cc of
                     ERROR e => ERROR e
@@ -136,7 +144,7 @@ structure SubXml :> SUBXML = struct
                   | name' pos text (x::xs) =
                     if List.find (fn c => c = x) nameEnd <> NONE
                     then OK (rev text, (x::xs), pos)
-                    else name' (pos + 1) (x::text) xs
+                    else name' (pos+1) (x::text) xs
             in
                 case name' (pos-1) [] (first::cc) of
                     ERROR e => ERROR e
@@ -187,11 +195,12 @@ structure SubXml :> SUBXML = struct
 
         and declaration pos acc cc =
             case cc of
-                #"-" :: #"-" :: xs => comment (pos+2) acc xs
-              | #"[" :: #"C" :: #"D" :: #"A" :: #"T" :: #"A" ::
-                #"[" :: xs => cdata (pos+7) acc xs
-              | #"D" :: #"O" :: #"C" :: #"T" :: #"Y" :: #"P" ::
-                #"E" :: xs => doctype (pos+7) acc xs
+                #"-" :: #"-" :: xs =>
+                comment (pos+2) acc xs
+              | #"[" :: #"C" :: #"D" :: #"A" :: #"T" :: #"A" :: #"[" :: xs =>
+                cdata (pos+7) acc xs
+              | #"D" :: #"O" :: #"C" :: #"T" :: #"Y" :: #"P" :: #"E" :: xs =>
+                doctype (pos+7) acc xs
               | [] => error pos "Document ends during declaration"
               | _ => error pos "Unsupported declaration type"
 
@@ -352,9 +361,12 @@ structure SubXml :> SUBXML = struct
                 
         and node n =
             case n of
-                TEXT string => string
-              | CDATA string => "<![CDATA[" ^ string ^ "]]>"
-              | COMMENT string => "<!-- " ^ string ^ "-->"
+                TEXT string =>
+                string
+              | CDATA string =>
+                "<![CDATA[" ^ string ^ "]]>"
+              | COMMENT string =>
+                "<!-- " ^ string ^ "-->"
               | ATTRIBUTE { name, value } =>
                 name ^ "=" ^ "\"" ^ value ^ "\"" (*!!!*)
               | ELEMENT { name, children } =>

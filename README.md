@@ -1,21 +1,28 @@
 
-Simplistic Standard ML XML "parser"
-===================================
+SubXml - A parser for a subset of XML, written in Standard ML
+=============================================================
 
 https://bitbucket.org/cannam/sml-simplexml
 
-This simplistic XML "parser", intended for handling configuration
-files and small data files in simple formats, produces an in-memory
-DOM tree containing element, text, and attribute data types only.
+SubXml is a parser and serialiser for a format resembling XML. It can
+be used as a minimal parser for small XML configuration or interchange
+files, so long as they make suitably limited use of XML and so long as
+that is not expected to change.
 
-This is a very long way from being a conforming parser, and it should
-only be used to support near-trivial legacy documents whose known
-formats are not expected to change. The character encoding is assumed
-to be UTF8 or an 8-bit ASCII-compatible encoding; wide character
-encodings are not supported. Comments and processing instructions are
-ignored. CDATA sections are supported, DOCTYPE declarations are
-ignored, and other declarations are rejected. There is no DOM
-navigation API. Testing is very minimal.
+The format supported by SubXml consists of the element, attribute,
+text, CDATA, and comment syntax from XML. It differs from XML in the
+following ways:
+
+ * The document is assumed to be in an 8-bit "ASCII-compatible" format
+   such as UTF-8; UTF-16 is not supported
+
+ * Processing instructions (<? ... ?>) are ignored
+
+ * DOCTYPE declarations are ignored; all other declarations (<! ... >)
+   are rejected
+
+ * Character and entity references (&-escapes) have no special status
+   and are just passed through literally
 
 Note that although the parser is limited, it is not forgiving --
 anything it can't understand is rejected with a clear error
