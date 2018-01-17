@@ -54,9 +54,10 @@
 signature SUBXML = sig
 
     datatype node = ELEMENT of { name : string, children : node list }
-                  | ATTRIBUTE of string * string
+                  | ATTRIBUTE of { name : string, value : string }
                   | TEXT of string
                   | CDATA of string
+                  | COMMENT of string
 
     datatype document = DOCUMENT of { name : string, children : node list }
 
@@ -65,15 +66,16 @@ signature SUBXML = sig
 
     val parse : string -> document result
     val serialise : document -> string
-                                   
+                                  
 end
 
 structure SubXml :> SUBXML = struct
 
     datatype node = ELEMENT of { name : string, children : node list }
-                  | ATTRIBUTE of string * string
+                  | ATTRIBUTE of { name : string, value : string }
                   | TEXT of string
                   | CDATA of string
+                  | COMMENT of string
 
     datatype document = DOCUMENT of { name : string, children : node list }
 
@@ -89,24 +91,26 @@ structure SubXml :> SUBXML = struct
                        | NAME of string
                        | TEXT of string
                        | CDATA of string
+                       | COMMENT of string
 
-        fun toString t =
+        fun name t =
             case t of ANGLE_L => "<"
                     | ANGLE_R => ">"
                     | ANGLE_SLASH_L => "</"
                     | SLASH_ANGLE_R => "/>"
                     | EQUAL => "="
-                    | NAME s => s
-                    | TEXT s => "\"" ^ s ^ "\""
-                    | CDATA s => "CDATA section"
+                    | NAME s => "name \"" ^ s ^ "\""
+                    | TEXT s => "text"
+                    | CDATA _ => "CDATA section"
+                    | COMMENT _ => "comment"
     end
 
     structure Lex :> sig
                   val lex : string -> T.token list result
               end = struct
                       
-        fun error pos text = ERROR (text ^ " at character position " ^
-                                    Int.toString (pos - 1))
+        fun error pos text =
+            ERROR (text ^ " at character position " ^ Int.toString (pos-1))
         fun tokenError pos token =
             error pos ("Unexpected token '" ^ Char.toString token ^ "'")
 
@@ -121,9 +125,9 @@ structure SubXml :> SUBXML = struct
                     else quoted' (pos + 1) (x::text) xs
             in
                 case quoted' pos [] cc of
-                    OK (text, rest, newpos) =>
+                    ERROR e => ERROR e
+                  | OK (text, rest, newpos) =>
                     inside newpos (T.TEXT (implode text) :: acc) rest
-                  | ERROR e => ERROR e
             end
 
         and name first pos acc cc =
@@ -135,19 +139,25 @@ structure SubXml :> SUBXML = struct
                     else name' (pos + 1) (x::text) xs
             in
                 case name' (pos-1) [] (first::cc) of
-                    OK ([], [], pos) => error pos "Document ends before name"
+                    ERROR e => ERROR e
+                  | OK ([], [], pos) => error pos "Document ends before name"
                   | OK ([], (x::xs), pos) => tokenError pos x
                   | OK (text, rest, pos) =>
                     inside pos (T.NAME (implode text) :: acc) rest
-                  | ERROR e => ERROR e
             end
 
         and comment pos acc cc =
-            case cc of
-                #"-" :: #"-" :: #">" :: xs => outside (pos+3) acc xs
-              | #">" :: _ => tokenError pos #">"
-              | x :: xs => comment (pos+1) acc xs
-              | [] => error pos "Document ends during comment"
+            let fun comment' pos text cc =
+                    case cc of
+                        #"-" :: #"-" :: #">" :: xs => OK (rev text, xs, pos+3)
+                      | x :: xs => comment' (pos+1) (x::text) xs
+                      | [] => error pos "Document ends during comment"
+            in
+                case comment' pos [] cc of
+                    ERROR e => ERROR e
+                  | OK (text, rest, pos) => 
+                    outside pos (T.COMMENT (implode text) :: acc) rest
+            end
 
         and instruction pos acc cc =
             case cc of
@@ -159,14 +169,14 @@ structure SubXml :> SUBXML = struct
         and cdata pos acc cc =
             let fun cdata' pos text cc =
                     case cc of
-                        #"]" :: #"]" :: #">" :: xs => OK (rev text, xs, pos)
+                        #"]" :: #"]" :: #">" :: xs => OK (rev text, xs, pos+3)
                       | x :: xs => cdata' (pos+1) (x::text) xs
                       | [] => error pos "Document ends during CDATA section"
             in
                 case cdata' pos [] cc of
-                    OK (text, rest, pos) =>
+                    ERROR e => ERROR e
+                  | OK (text, rest, pos) =>
                     outside pos (T.CDATA (implode text) :: acc) rest
-                  | ERROR e => ERROR e
             end
                 
         and doctype pos acc cc =
@@ -238,7 +248,7 @@ structure SubXml :> SUBXML = struct
               end = struct                            
                   
         fun show [] = "end of input"
-          | show (tok :: _) = T.toString tok
+          | show (tok :: _) = T.name tok
 
         fun error toks text = ERROR (text ^ ", found before " ^ show toks)
 
@@ -247,7 +257,8 @@ structure SubXml :> SUBXML = struct
                 T.EQUAL :: T.TEXT value :: xs =>
                 namedElement {
                     name = #name elt,
-                    children = ATTRIBUTE (name, value) :: #children elt
+                    children = ATTRIBUTE { name = name, value = value } ::
+                               #children elt
                 } xs
               | toks => error toks "Expected attribute value"
 
@@ -268,6 +279,11 @@ structure SubXml :> SUBXML = struct
                     name = #name elt,
                     children = CDATA text :: #children elt
                 } xs
+              | T.COMMENT text :: xs =>
+                content {
+                    name = #name elt,
+                    children = COMMENT text :: #children elt
+                } xs
               | T.ANGLE_L :: xs =>
                 (case element xs of
                      ERROR e => ERROR e
@@ -276,23 +292,22 @@ structure SubXml :> SUBXML = struct
                          name = #name elt,
                          children = ELEMENT child :: #children elt
                      } xs)
-              | x :: xs =>
-                error xs ("Unexpected token " ^ T.toString x)
+              | tok :: xs =>
+                error xs ("Unexpected token " ^ T.name tok)
               | [] =>
-                error [] ("Document ends within element \"" ^ #name elt ^ "\"")
+                ERROR ("Document ends within element \"" ^ #name elt ^ "\"")
                        
         and namedElement elt toks =
             case toks of
                 T.SLASH_ANGLE_R :: xs => OK (elt, xs)
               | T.NAME name :: xs => attribute elt name xs
               | T.ANGLE_R :: xs => content elt xs
-              | x :: xs => error xs ("Unexpected token " ^ T.toString x)
-              | [] => error [] "Document ends within tag"
+              | x :: xs => error xs ("Unexpected token " ^ T.name x)
+              | [] => ERROR "Document ends within opening tag"
                        
         and element toks =
             case toks of
-                [] => ERROR "Empty element"
-              | T.NAME name :: xs =>
+                T.NAME name :: xs =>
                 (case namedElement { name = name, children = [] } xs of
                      ERROR e => ERROR e 
                    | OK ({ name, children }, xs) =>
@@ -303,13 +318,14 @@ structure SubXml :> SUBXML = struct
           | document (tok :: xs) =
             case tok of
                 T.TEXT _ => document xs
+              | T.COMMENT _ => document xs
               | T.ANGLE_L =>
                 (case element xs of
                      ERROR e => ERROR e
                    | OK (elt, []) => OK (DOCUMENT elt)
                    | OK (elt, (T.TEXT _ :: xs)) => OK (DOCUMENT elt)
                    | OK (elt, xs) => error xs "Extra data after document")
-              | _ => error xs ("Unexpected token " ^ T.toString tok)
+              | _ => error xs ("Unexpected token " ^ T.name tok)
 
         fun parse str =
             case Lex.lex str of
@@ -320,15 +336,13 @@ structure SubXml :> SUBXML = struct
     structure Serialise :> sig
                   val serialise : document -> string
               end = struct
-                    
+
         fun attributes nodes =
-            case (String.concatWith
-                      " "
-                      (map node (List.filter
-                                     (fn ATTRIBUTE _ => true | _ => false)
-                                     nodes))) of
-                "" => ""
-              | str => " " ^ str
+            String.concatWith
+                " "
+                (map node (List.filter
+                               (fn ATTRIBUTE _ => true | _ => false)
+                               nodes))
 
         and nonAttributes nodes =
             String.concat
@@ -338,15 +352,19 @@ structure SubXml :> SUBXML = struct
                 
         and node n =
             case n of
-                ATTRIBUTE (name, value) =>
-                name ^ "=" ^ "\"" ^ value ^ "\"" (*!!!*)
-              | TEXT string => string
+                TEXT string => string
               | CDATA string => "<![CDATA[" ^ string ^ "]]>"
-              | ELEMENT { name, children = [] } => "<" ^ name ^ "/>"
-              | ELEMENT { name, children } => "<" ^ name ^
-                                              attributes children ^ ">" ^
-                                              nonAttributes children ^
-                                              "</" ^ name ^ ">"
+              | COMMENT string => "<!-- " ^ string ^ "-->"
+              | ATTRIBUTE { name, value } =>
+                name ^ "=" ^ "\"" ^ value ^ "\"" (*!!!*)
+              | ELEMENT { name, children } =>
+                "<" ^ name ^
+                (case (attributes children) of
+                     "" => ""
+                   | s => " " ^ s) ^
+                (case (nonAttributes children) of
+                     "" => "/>"
+                   | s => ">" ^ s ^ "</" ^ name ^ ">")
                               
         fun serialise (DOCUMENT { name, children }) =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" ^
