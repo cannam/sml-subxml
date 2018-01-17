@@ -259,7 +259,7 @@ structure SubXml :> SUBXML = struct
         fun show [] = "end of input"
           | show (tok :: _) = T.name tok
 
-        fun error toks text = ERROR (text ^ ", found before " ^ show toks)
+        fun error toks text = ERROR (text ^ " before " ^ show toks)
 
         fun attribute elt name toks =
             case toks of
@@ -269,15 +269,16 @@ structure SubXml :> SUBXML = struct
                     children = ATTRIBUTE { name = name, value = value } ::
                                #children elt
                 } xs
-              | toks => error toks "Expected attribute value"
+              | T.EQUAL :: xs => error xs "Expected attribute value"
+              | toks => error toks "Expected attribute assignment"
 
         and content elt toks =
             case toks of
                 T.ANGLE_SLASH_L :: T.NAME n :: T.ANGLE_R :: xs =>
                 if n = #name elt
                 then OK (elt, xs)
-                else error xs ("Element closing tag </" ^ n ^ "> " ^
-                               "does not match opening <" ^ #name elt ^ ">")
+                else ERROR ("Closing tag </" ^ n ^ "> " ^
+                            "does not match opening <" ^ #name elt ^ ">")
               | T.TEXT text :: xs =>
                 content {
                     name = #name elt,

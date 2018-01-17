@@ -19,8 +19,12 @@ fun processFile filename =
     let val input = contents filename
     in
         case SubXml.parse input of
-            SubXml.ERROR e => TextIO.output (TextIO.stdErr, "Error: " ^ e ^ "\n")
-          | SubXml.OK xml => print (SubXml.serialise xml ^ "\n")
+            SubXml.ERROR e =>
+            (TextIO.output (TextIO.stdErr, "Error: " ^ e ^ "\n");
+             OS.Process.exit OS.Process.failure)
+          | SubXml.OK xml =>
+            (print (SubXml.serialise xml ^ "\n");
+             OS.Process.exit OS.Process.success)
     end
 
 fun usage () =
@@ -28,8 +32,8 @@ fun usage () =
          (TextIO.stdErr,
           "\nUsage: " ^ (CommandLine.name ()) ^
           " file.xml\n\n" ^
-          "Parse the named XML file and serialise it again to stdout.\n\n");
-     raise Fail "Incorrect arguments specified")
+          "Parse the named XML-subset file and serialise it again to stdout.\n\n");
+     OS.Process.exit OS.Process.failure)
 
 fun handleArgs args =
     case args of
