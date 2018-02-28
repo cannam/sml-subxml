@@ -2,7 +2,7 @@
 (* SubXml - A parser for a subset of XML
    =====================================
 
-   https://bitbucket.org/cannam/sml-simplexml
+   https://bitbucket.org/cannam/sml-subxml
 
    SubXml is a parser and serialiser for a format resembling XML. It
    can be used as a minimal parser for small XML configuration or
