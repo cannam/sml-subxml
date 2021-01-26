@@ -59,20 +59,34 @@
    Software without prior written authorization.
 *)
 
+(** Parser and serialiser for a format resembling XML. This can be
+    used as a minimal parser for small XML configuration or
+    interchange files. The format supported consists of the element,
+    attribute, text, CDATA, and comment syntax from XML, and is always
+    UTF-8 encoded.
+*)
 signature SUBXML = sig
 
+    (** Node type, akin to XML DOM node. *)
     datatype node = ELEMENT of { name : string, children : node list }
                   | ATTRIBUTE of { name : string, value : string }
                   | TEXT of string
                   | CDATA of string
                   | COMMENT of string
 
+    (** Document type, akin to XML DOM. *)
     datatype document = DOCUMENT of { name : string, children : node list }
 
     datatype 'a result = OK of 'a
                        | ERROR of string
 
+    (** Parse a UTF-8 encoded XML-like document and return a document
+        structure, or an error message if the document could not be
+        parsed. *)
     val parse : string -> document result
+
+    (** Serialise a document structure into a UTF-8 encoded XML-like
+        document. *)
     val serialise : document -> string
                                   
 end
