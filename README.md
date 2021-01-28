@@ -20,6 +20,9 @@ following ways:
  * DOCTYPE declarations are ignored; all other declarations (<! ... >)
    are rejected except for CDATA, which is handled properly
 
+ * It follows from the above that only built-in named entities and
+   character entities are decoded (but those ones are)
+
  * Comments appearing before or after the root element are ignored;
    other comments are included in the parsed tree
 
