@@ -13,16 +13,15 @@ The format supported by SubXml consists of the element, attribute,
 text, CDATA, and comment syntax from XML. It differs from XML in the
 following ways:
 
- * The document is assumed to be in an 8-bit "ASCII-compatible" format
-   such as UTF-8; UTF-16 is not supported
+ * The only supported character encoding is UTF-8
 
  * Processing instructions (<? ... ?>) are ignored
 
  * DOCTYPE declarations are ignored; all other declarations (<! ... >)
    are rejected except for CDATA, which is handled properly
 
- * Character and entity references (&-escapes) have no special status
-   and are just passed through literally
+ * Comments appearing before or after the root element are ignored;
+   other comments are included in the parsed tree
 
 Note that although the parser is limited, it is not forgiving --
 anything it can't understand is rejected with a clear error
@@ -34,6 +33,6 @@ An equally simplistic serialiser is also provided.
 For a proper XML parser in SML, consider fxp, mirrored at
 https://github.com/cannam/fxp.
 
-Copyright 2018 Chris Cannam.
+Copyright 2018-2021 Chris Cannam.
 MIT/X11 licence. See the file COPYING for details.
 

@@ -3,3 +3,4 @@ syntax: glob
 *.log
 subxmlparse
 out.xml
+testfiles/tmp
